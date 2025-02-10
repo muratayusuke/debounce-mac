@@ -39,7 +39,9 @@ CGEventRef _tapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef even
     _eventTap = CGEventTapCreate(kCGSessionEventTap,
                                  kCGTailAppendEventTap,
                                  kCGEventTapOptionDefault,
-                                 CGEventMaskBit(kCGEventKeyDown),
+                                 CGEventMaskBit(kCGEventKeyDown) |
+                                 CGEventMaskBit(kCGEventLeftMouseDown) |
+                                 CGEventMaskBit(kCGEventRightMouseDown),
                                  (CGEventTapCallBack)_tapCallback,
                                  (__bridge void *)(self));
     if (!_eventTap) {
@@ -78,25 +80,34 @@ CGEventRef _tapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef even
 - (CGEventRef)processEvent:(CGEventRef)cgEvent
 {
   NSEvent* event = [NSEvent eventWithCGEvent:cgEvent];
-
   long long currentKeytime = (long long)([[NSDate date] timeIntervalSince1970] * 1000.0);
-  UInt16 currentKeycode = [event keyCode];
   BOOL debounce = NO;
-  long long keyboard_id = CGEventGetIntegerValueField(cgEvent, kCGKeyboardEventKeyboardType);
 
-  if (keyboard_id != SYNTHETIC_KB_ID &&
-      currentKeycode == lastKeycode &&
-      ![event isARepeat] &&
-      (currentKeytime - lastKeytime) < DEBOUNCE_DELAY) {
+  if (event.type == NSEventTypeKeyDown) {
+    UInt16 currentKeycode = [event keyCode];
+    long long keyboard_id = CGEventGetIntegerValueField(cgEvent, kCGKeyboardEventKeyboardType);
 
-    NSLog(@"BOUNCE detected!!!  Character: %@",
-          event.characters);
-    NSLog(@"Time between keys: %lldms (limit <%dms)",
-          (currentKeytime - lastKeytime),
-          DEBOUNCE_DELAY);
-
-    // Cancel keypress event
-    debounce = YES;
+    if (keyboard_id != SYNTHETIC_KB_ID &&
+        currentKeycode == lastKeycode &&
+        ![event isARepeat] &&
+        (currentKeytime - lastKeytime) < DEBOUNCE_DELAY) {
+      NSLog(@"BOUNCE detected!!!  Character: %@", event.characters);
+      NSLog(@"Time between keys: %lldms (limit <%dms)",
+            (currentKeytime - lastKeytime),
+            DEBOUNCE_DELAY);
+      debounce = YES;
+    }
+    lastKeycode = currentKeycode;
+  } else if (event.type == NSEventTypeLeftMouseDown ||
+             event.type == NSEventTypeRightMouseDown) {
+    if ((currentKeytime - lastKeytime) < DEBOUNCE_DELAY) {
+      NSString *clickType = (event.type == NSEventTypeLeftMouseDown) ? @"Left Click" : @"Right Click";
+      NSLog(@"Mouse BOUNCE detected!!! Type: %@", clickType);
+      NSLog(@"Time between clicks: %lldms (limit <%dms)",
+            (currentKeytime - lastKeytime),
+            DEBOUNCE_DELAY);
+      debounce = YES;
+    }
   }
 
   if(debounce) {
@@ -104,8 +115,6 @@ CGEventRef _tapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef even
   }
 
   lastKeytime = currentKeytime;
-  lastKeycode = currentKeycode;
-
   return cgEvent;
 }
 
